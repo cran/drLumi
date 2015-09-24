@@ -1,0 +1,37 @@
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
+\begin{verbatim}
+> imp_path <- system.file(c("inst", "extdata"), "plate1.csv", package = "luminexData")
+> imp <- lumImport(imp_path)
+> imp
+The file imported is: Fluorescence type 
+Identified data type: Median 
+ Identified data type: Net MFI 
+ Identified data type: Count 
+ Identified data type: Result 
+ Identified data type: Range 
+ Identified data type: Avg Net MFI 
+ Identified data type: Avg Result 
+ Identified data type: Avg Range 
+ Identified data type: %CV Replicates 
+ Identified data type: % Recovery 
+ Identified data type: Comments 
+ Identified data type: Units 
+ Identified data type: Standard Expected Concentration 
+ Identified data type: Control Expected Concentration 
+ Identified data type: Control Range - Low 
+ Identified data type: Control Range - High 
+ Identified data type: Per Bead Count 
+ Identified data type: Dilution Factor 
+ Identified data type: Analysis Types 
+ Identified data type: Analysis Coefficients 
+ Identified data type: R^2 
+ Identified data type: Audit Logs 
+ Identified data type: Warnings/Errors 
+> names(imp)
+ [1] "dtblock"       "raw_metadata"  "well_vars"     "scurve_vars"  
+ [5] "average_vars"  "batch_vars"    "name_batch"    "region_vars"  
+ [9] "sample_vars"   "type_raw_data"
+\end{verbatim}
+\end{kframe}
+\end{knitrout}

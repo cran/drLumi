@@ -1,0 +1,152 @@
+\documentclass[class=minimal, border=1pt]{standalone}
+
+ \usepackage[spanish]{babel}
+% \usepackage[ansinew]{inputenc}
+ % \usepackage[a4paper,top=0cm,bottom=0cm,left=0cm,right=0cm, landscape]{geometry}
+ % \usepackage[a4paper, landscape]{geometry}
+
+% \usepackage[pdftex]{graphicx}
+\usepackage{tikz} % paquete para flow-chart
+% \usepackage{setspace}
+\usetikzlibrary{shapes,arrows} % paquete para dibujar clouds, elipse, etc.
+
+
+% Define block styles
+\tikzstyle{decision} = [diamond, draw, fill=blue!20,  text width=5cm, text badly centered, node distance=3cm, inner sep=0pt]%
+\tikzstyle{block0} = [rectangle, draw, fill=green!10,  text width=3cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+\tikzstyle{block02} = [rectangle, draw, fill=green!10,  text width=3cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+
+
+\tikzstyle{block} = [rectangle, draw, fill=blue!20,  text width=3cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+\tikzstyle{block2} = [rectangle, draw, fill=blue!20,  text width=4.75cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+\tikzstyle{block3} = [rectangle, draw, fill=blue!20,  text width=4.3cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+\tikzstyle{block4} = [rectangle, draw, fill=blue!20,  text width=1.7cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+\tikzstyle{block5} = [rectangle, draw, fill=blue!20,  text width=3.6cm, text centered, rounded corners, minimum height=4em, node distance=5cm]%
+
+
+\tikzstyle{line} = [draw, -latex', line width=2pt]%
+\tikzstyle{cloud} = [ellipse,  draw,  fill=red!20, node distance=6cm,  minimum height=1cm,text width=3.1cm]%   
+\tikzstyle{cloud2} = [ellipse, draw, fill=red!20, node distance=5cm, align=center, minimum height=1cm,text width=2.7cm]%
+\tikzstyle{cloud3} = [ ellipse, draw, fill=red!20, node distance=5cm,  align=center, minimum height=1cm,text width=2.7cm]%
+\tikzstyle{cloud4} = [ellipse, draw, fill=red!20, node distance=4cm,  align=center,minimum height=2cm,text width=3.2cm]%
+
+\begin{document}
+
+
+
+\begin{tikzpicture}[node distance = 3cm, auto]
+
+    % Place nodes
+    \node [block0] (raw) {xPONENT\textregistered };
+
+    
+        \node [block, below of=raw,  yshift=2.7cm] (lumimport) {
+        Manage data: \\
+		\begin{tabular}{c}
+		 \texttt{{lum\_import}} \\
+   	     \texttt{{lum\_export}} \\
+      \end{tabular}		        
+    };
+    
+
+     \node [block, below of=lumimport,  yshift=1.9cm] (dataselection) {Extract data:\\ \texttt{data\_selection}};    
+
+    \node [block02, below of=dataselection] (raw2) {Raw data};
+
+    
+    \node [block, right of=dataselection] (scluminex) {Fit standard curve:\\ \texttt{scluminex}};
+    
+    \node [cloud, above of=scluminex] (scargs) {
+		\begin{tabular}{c}
+		\hspace*{-0.3cm}		 Background methods: \\
+		\hspace*{-0.3cm}		Ignore (\textit{{ignore}}) \\
+		\hspace*{-0.3cm}		Constraint (\textit{constraint}) \\
+		\hspace*{-0.3cm}		Subtract (\textit{subtract}) \\
+		\hspace*{-0.3cm}		Include  (\textit{include}) \\
+      \end{tabular}		        
+    };
+
+    \node [cloud2, below of=scluminex] (scfuns) {%
+		\begin{tabular}{c}%
+	\hspace*{-0.3cm}	 Functions to fit:\\%
+	\hspace*{-0.3cm}	 5PLogistic \textit{(SSl5)}\\%
+	\hspace*{-0.3cm}	 4PLogistic \textit{(SSl4)}\\%
+	\hspace*{-0.3cm} Exponential \textit{(SSexp)}\\%
+      \end{tabular}		        
+    };
+    
+    \node [block4, right of=scluminex] (plotcurves) {Plot data: \\ \texttt{plot}};   
+    
+    \node [cloud4, right of=plotcurves] (plotargs) {
+		\begin{tabular}{c}
+		\hspace*{-0.33cm}		Type:\\	
+		\hspace*{-0.33cm}		Standard Curve \textit{(scurve)}\\
+		\hspace*{-0.33cm}		Residuals \textit{(residuals)}\\
+		\hspace*{-0.33cm}		QQplot \textit{(qqplot)}\\
+		 \end{tabular}		        
+    };    
+    
+    \node [block3, above of=plotcurves] (summary) {
+    Summary models: \\     
+    		\begin{tabular}{c}
+				 \texttt{summary}\\
+				  \texttt{as.data.frame}\\
+				  \texttt{as.data.frame.summary}\\ 
+				  \texttt{get\_outliers}\\ 
+			 \end{tabular}	    
+    };       
+
+    \node [block5,  below of = summary, yshift=+1.9cm] (calibration) {
+    Calibration of samples:\\     
+    		\begin{tabular}{c}
+				 \texttt{invest}\\
+                \texttt{est\_conc}\\
+			 \end{tabular}	    
+    };                 
+          
+
+    \node [block5,  below of = summary, yshift=-1.9cm] (others) {
+    Confidence/Prediction intervals:\\     
+    		\begin{tabular}{c}
+				 \texttt{conf\_bands}\\
+			 \end{tabular}	    
+    };                 
+          
+          
+                    
+    \node [block2, below of=plotcurves] (estimate) {
+     Limits of Quantification:
+    	\begin{tabular}{c}
+				Coefficient of Variation:  \texttt{loq\_cv} \\	
+				Interval:  \texttt{loq\_interval} \\
+				Derivatives:  \texttt{loq\_derivatives} \\				
+		\end{tabular}		    
+    };                      
+
+    
+
+    
+    
+    % Draw edges
+    \path [line] (raw) -- (lumimport);
+    \path [line] (lumimport) -- (dataselection);
+    \path [line] (raw2) -- (dataselection);
+    \path [line, dashed] (scargs) -- (scluminex);
+    \path [line, dashed] (scfuns) -- (scluminex);
+    
+
+   \path [line, dashed] (plotargs) -- (plotcurves);
+    
+    \path [line] (dataselection) -- (scluminex);
+    \path [line] (scluminex) -- (summary);
+    \path [line] (scluminex) -- (calibration);
+    \path [line] (scluminex) -- (estimate);
+    \path [line] (scluminex) -- (others);
+
+    \path [line] (scluminex) -- (plotcurves);
+
+\end{tikzpicture}
+
+
+
+\end{document}

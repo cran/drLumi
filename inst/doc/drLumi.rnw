@@ -1,0 +1,1163 @@
+\documentclass[11pt]{article}
+\usepackage[ansinew]{inputenc}
+%\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{amssymb,amsmath}
+\usepackage{lscape}
+\usepackage{longtable}
+\usepackage{fancyvrb}
+\usepackage{enumerate}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage[a4paper,left=2.1cm,right=2.1cm,top=2.4cm,bottom=2.4cm]{geometry}
+\usepackage{color}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage[english]{babel}
+\usetikzlibrary{shapes.geometric, arrows}
+
+\newenvironment{changemargin1}{
+    \begin{list}{}{
+        \setlength{\leftmargin}{+5cm}
+        \setlength{\rightmargin}{3.5cm}
+        \footnotesize
+    }
+    \item[]
+}{\end{list}}
+
+\newenvironment{itemize*}%
+    {\begin{itemize}%
+        \setlength{\itemsep}{-0.35cm}%
+        \setlength{\parskip}{10pt}}%
+{\end{itemize}}
+\begin{document}
+
+%\VignetteEngine{knitr::knitr} 
+%\VignetteIndexEntry{drLumi}
+
+%%%%%%%%%%%%%%%%
+%%%% First page
+%%%%%%%%%%%%%%%%
+
+\title{\Large \bf {\tt drLumi}: multiplex immunoassays data 
+analysis \ \vspace{0.5cm}}
+
+\author{ H\'ector Sanz$^{1}$, John Aponte$^{1}$, Jaroslaw Harezlak$^{2}$, \\ 
+Yan Dong$^{2}$, Magdalena Murawska$^{2}$ and Clarissa Valim$^{3}$}
+
+
+\maketitle
+
+\begin{scriptsize}
+\noindent $^{1}$ISGlobal, Barcelona Ctr. Int. Health Res. (CRESIB), 
+Hospital Cl\'inic - Universitat de Barcelona, Barcelona, Spain\newline
+$^{2}$Indiana University Fairbanks School of Public Health, Indianapolis, IN, 
+USA \newline
+$^{3}$Harvard School of Public Health, Boston, MA, USA
+\end{scriptsize} 
+
+
+\begin{center}
+\texttt{hector.sanz@isglobal.org}
+\end{center}
+
+\vspace{0.5cm}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%
+%%%% Introduction
+%%%%%%%%%%%%%%%%%%%%
+
+\newpage
+\section{Introduction} 
+
+The {\tt drLumi} package allows users to manage data, calibrate assays and 
+perform quality control of multiplex immunoassays. This document provides an
+overview on the usage of the main functions of the package and examples
+of the implemented methods. The datasets available in the package were used 
+in the examples presented so they can be reproduced.\\
+
+
+\noindent Multiplex immunoassays are used to measure concentrations of several cytokines and chemokines, antibodies, or other proteins simultaneously and are important for biomarkers discovery.\\
+
+\noindent Several beads with antibodies fixed to capture the analyte of interest are mixed with subject's serum or plasma in 96 well plates, one subject per well. Sets of beads are individually labeled according to the specific analyte capability of measuring. After the beads capture the existing analyte in subject's sample, they are allowed to interact with a fluorescent antibody. In the presence of the analyte, the fluorescent antibody and the antibody fixed to the bead make a sandwich with the analyte to be quantified. This complex goes through laser bins that quantify the amount of analyte in each bead with the analyte-antibodies complex; the assay final raw output is the median fluorescence intensity (MFI) over all beads containing the corresponding analytes. To calibrate between-plate variability and quantify analyte concentrations, each plate includes wells containing increasing dilutions of a sample with known concentration of each analyte. Those wells are used to fit standard curves with the MFI as a function of the concentration of the analyte in the reference samples. To calibrate each subject's response, the MFI of the subject samples is converted in analyte concentration using the standard curve. The minimum and maximum concentration of analyte that can be reliably quantified after using the standard curve to transform the MFI in an analyte concentration is called lower and higher limit of quantification (LLOQ and HLOQ), respectively. Additionally, to estimate the background noise in the assay, samples containing no analyte (negative or blank controls) are included in each assay plate.\\
+
+\noindent Several analytical factors when pre-processing the data from the assay may result in suboptimal calibration and decrease assay sensitivity, i.e., failure to quantify a large amount of samples because concentration is outside the limits of quantification (LOQ) range, including the fit of standard curve and the approach used to estimate limits of quantification. Moreover, the approach used to account for background noise when estimating standard curves can also affect the fitting of the standard curves and impact the assay calibration and sensitivity. \\
+
+
+\noindent There are several commercial software to handle 
+concentration-response multiplex data. Usually these software 
+allow to estimate concentration of samples using a standard curve but 
+they don't allow to perform a good Quality Control (QC) based on residuals, 
+goodness of fit or confidence intervals for the coefficients. \\
+
+\newpage
+\noindent In the following sections we illustrate how to perform all QC process 
+for multiplex immunoassays data using {\tt drLumi} package.
+
+\begin{figure}[h!]
+\begin{center}
+    \includegraphics[scale=0.8]{./flow.pdf}
+\end{center}
+\caption{Schematic representation of the main functions and arguments included in the drLumi package. The name of the functions are shown inside blue boxes, options and name of arguments of the functions are shown inside red ellipses and the green box shows the starting point of the flow depending on the origin of the raw data.}
+\end{figure}
+
+
+\noindent The package allows to import CSV raw data that has been 
+exported from xPONENT$^\circledR$ software. For a detailed example showing how to 
+process this type of data go to section~\ref{sec:xponent}.\\
+
+\noindent To load the package: 
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+library(drLumi)
+@
+
+<<echo=FALSE, prompt=TRUE, comment=NA, highlight=FALSE, warning=FALSE>>=
+library(xtable)
+library(minpack.lm)
+library(ggplot2)
+library(plyr)
+options(width=80)
+knitr::opts_chunk$set(echo=FALSE, fig.path='./', cache=TRUE)
+@
+
+%%%%%%%%%%%%%%%%%%%%
+%%%% Type of Data 
+%%%%%%%%%%%%%%%%%%%%
+\newpage
+\section{Main structure of datasets}
+
+The package only allows to read automatically CSV files from xPONENT$^\circledR$ software. 
+Other data must be pre-processed, if necessary, and transformed into 
+a {\tt data.frame} class object. The final {\tt data.frame} must have the 
+following variables:
+
+\begin{itemize*}
+    \item Plate identification.
+    \item Well position.
+    \item Analyte name.
+    \item Sample identification.
+    \item Median fluorescence intensity values.
+    \item Expected concentration.
+\end{itemize*}
+
+\noindent The information can be just in one {\tt data.frame} or 
+in several (e.g., {\tt mfidata} and {\tt ecdata}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Example data in the package
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Datasets in the package} 
+
+There are three datasets available in the {\tt drLumi} package. 
+
+\subsection{MFI data}
+A dataset with the median fluorescence intensity values for three 
+96-wells plates and 30 analytes information per plate.  The variables 
+included in the dataset are:
+
+\begin{itemize*}
+    \item plate: plate identification.
+    \item well: position of the sample in the plate.
+    \item analyte: analyte tested.
+    \item sample: type of sample in the well (blank, standard, positive 
+    control or unknown). In each plate 2 blanks,  17 dilution points (standard 
+    1 is duplicated), 3 controls (each one duplicated) were tested.
+    \item mfi: Median Fluorescence Intensity.
+\end{itemize*}
+
+\noindent To load the median fluorescence data:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+data(mfidata)
+@
+
+
+\noindent First 6 rows of the {\tt mfidata}:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(mfidata)
+@
+
+
+\subsection{EC data}
+A dataset with the expected concentration data by analyte for the 
+{\tt mfidata}. The variables included in the {\tt data.frame} are:
+
+\begin{itemize*}
+    \item sample: type of sample (background, control or standard).
+    \item analyte: analyte tested.
+    \item ec: expected concentration value.
+\end{itemize*}
+
+\noindent To load the expected concentration data:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+data(ecdata)
+@
+
+\noindent First 6 rows of the {\tt ecdata}:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(ecdata)
+@
+
+
+\subsection{Raw data from xPONENT$^\circledR$ software}
+There is an example of CSV raw data from xPONENT$^\circledR$ software in 
+{\tt inst/extdata} named \textbf{{\tt plate1.csv}}. For a detailed example
+of this data go to section \ref{sec:xponent}.
+
+
+%%%%%%%%%%%%%%%%%%%
+%%%%% Prepare data
+%%%%%%%%%%%%%%%%%%%
+
+\section{Extraction of samples data} \label{Extraction of data}
+
+Generally, the machine that reads the assay is connected to a software that produces a dataset including standard points, blank controls and subject's samples. The {\tt data\_selection} function allows splitting variables and samples in different datasets.  Also, is possible to merge the expected concentration values and flag points (samples to be removed from the analysis, for instance outliers). Two available methods can be used in order to identify the samples:
+
+\begin{itemize}
+ \item specify the \textit{pattern} of the samples' name. The {\tt data\_selection} 
+ function  using regular expressions will match samples based 
+ on the \textit{pattern}.
+ \item specify the exact name of the samples.
+\end{itemize}
+
+
+\noindent Extracting samples based on a \textit{pattern} and merging the 
+expected concentration variables:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+datasets <- data_selection(x = mfidata, ecfile = ecdata, 
+    byvar.ecfile = c("sample","analyte"),
+    backname = "Background0", 
+    stanname="Standard",posname = "Controls")
+@
+
+\noindent Where
+
+\begin{itemize*}
+    \item {\tt x=mfidata}: is the MFI {\tt data.frame}.
+\item {\tt ecfile=ecdata}: is the expected concentration {\tt data.frame} to be merged 
+to {\tt mfidata}.
+\item {\tt byvar.ecfile = c("sample","analyte")}: are the link variables between
+the {\tt mfidata} and {\tt ecdata}.
+\item {\tt backname = "Background0"}: is the pattern of the blank controls.
+\item {\tt stanname = "Standard"}: is the pattern of the standard points.
+\item {\tt posname = "Controls"}: is the pattern of the controls other than blank.
+\end{itemize*}
+
+\noindent All samples datasets have been extracted 
+(first 3 observations of each):\\
+
+\noindent \textbf{Background}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(datasets$plate_1$background,3)
+@
+
+\noindent \textbf{Standard}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(datasets$plate_1$standard,3)
+@
+
+\noindent \textbf{Positive controls}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(datasets$plate_1$positive,3)
+@
+
+\noindent \textbf{Unknowns}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(datasets$plate_1$unknowns,3)
+@
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%
+%%%% Analysis of data
+%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Data analysis}
+The function used to analyze the data is {\tt scluminex}. Given standard and 
+background (optional) datasets, a list of nonlinear models and a background method this 
+function tries to fit the list of models hierarchicaly. The package has some 
+pre-specified models. The models are fitted by the {\tt nlsLM} function 
+from the {\tt minpack.lm} \cite{minpack.lm} package which is a modified 
+version of the {\tt nls} function that incorporates the Levenberg-Marquardt 
+algorithm. The {\tt scluminex} function transforms the original data into base 
+10 logarithm. 
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+allanalytes <- scluminex(plateid = "newplate", 
+    standard = datasets$plate_1$standard, 
+    background = datasets$plate_1$background,
+    bkg = "ignore", lfct = c("SSl5","SSl4"), 
+    fmfi = "mfi", verbose = FALSE)
+@
+
+\noindent where,
+
+\begin{itemize*}
+    \item {\tt plateid}: is the name of the plate (or experiment).
+    \item {\tt standard = datasets\$plate\_1\$standard}: is a {\tt data.frame} 
+    with the standard points information.
+    \item {\tt background = datasets\$plate\_1\$background}: is a {\tt data.frame} 
+    with the blank controls data.
+    \item {\tt bkg = "ignore"}: is the approach to account for the background noise.
+    \item {\tt lfct = c("SSl5","SSl4")}: are the models to be fitted. The function 
+    will try to estimate in first place the {\tt SSl5} model and if the model 
+    does not converge will try to fit {\tt SSl4}.
+    \item {\tt fmfi = "mfi"}: is the name of the MFI variable.
+    \item {\tt verbose = FALSE}: logical to do not print the convergence of the models.
+\end{itemize*}
+
+\noindent Note that the class of {\tt allanalytes} is {\tt scluminex}. The 
+{\tt list} syntax can be used to extract the information of one specific 
+analyte:
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, warning=FALSE>>=
+class(allanalytes)
+allanalytes
+names(allanalytes$FGF)
+@
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% Define the models
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Models}
+As described previously, the package has implemented some nonlinear 
+{\tt selfStart} models:
+
+\paragraph{Five-parameter logistic function:} using a base 10 
+logarithm is implemented though the {\tt SSl5} function:
+
+\begin{align*}
+f(x; b, c, d, e, f) = c +\frac{d-c}{(1+10^{b(x-e)})^{f}}
+\end{align*}
+
+where,
+
+\begin{itemize*}
+    \item $b$: the slope around $e$ parameter
+    \item $c$: the lower asymptote parameter
+    \item $d$: the upper asymptote parameter
+    \item $e$: the concentration that produces a response halfway between 
+$c$ and $d$.
+    \item $f$: the asymmetry for the slope
+\end{itemize*}
+
+\noindent The constraint version has $c$ as a fixed value instead a 
+parameter. 
+
+\paragraph{Four-parameter logistic function:} is expressed as a particular version 
+of the five-parameter logistic model when the $f$ parameter is fixed to 1:
+
+\begin{align*}
+f(x; b, c, d, e) = c +\frac{d-c}{1+10^{b(x-e)}}
+\end{align*}
+
+\noindent  The {\tt SSl4} function has the {\tt selfStart} model implemented 
+also on base 10 logarithm. As the {\tt SSl5}, the constraint method has the 
+parameter $c$ as a fixed value.
+
+\paragraph{Exponential growth:} the {\tt SSexp} function has the 
+{\tt selfStart} exponential model implemented on base 10 logarithm:
+
+\begin{align*} 
+f(x; y_0, b) = y_0 10^{\frac{x}{b}}
+\end{align*}
+
+where,
+
+\begin{itemize*}
+    \item $b$: the growth rate
+    \item $y_0$: the response when there is no concentration.
+\end{itemize*}
+
+
+\noindent The constraint version of this function has $y_0$ as a fixed value 
+instead a parameter. 
+
+
+<<echo=FALSE, eval=TRUE, prompt=TRUE, highlight=FALSE>>=
+flog5p <- scluminex(plateid = "plate_1", standard = datasets[[1]]$standard, 
+    background = datasets[[1]]$background,
+    bkg = "ignore", lfct = "SSl5", 
+    fmfi = "mfi", verbose = FALSE)
+flog4p <- scluminex(plateid = "plate_1", standard = datasets[[1]]$standard, 
+    background = datasets[[1]]$background,
+    bkg = "ignore", lfct = "SSl4", fmfi = "mfi", 
+    verbose = FALSE)
+fexp <- scluminex(plateid = "plate_1", standard = datasets[[1]]$standard, 
+    background = datasets[[1]]$background, 
+    bkg = "ignore", lfct = "SSexp", fmfi = "mfi", 
+    verbose = FALSE)
+@
+
+
+
+\begin{figure}[!ht]
+\begin{center}
+    \begin{subfigure}{.28\textwidth}
+<<echo=FALSE, eval=TRUE, prompt=FALSE, highlight=FALSE, fig.show='asis'>>=
+q <- plot(flog5p, subset.list="IL15", size.legend=NA, psize=2.5,  
+    color.bkg = NA)
+q <- q + ggtitle("5 parameter logistic function") 
+q <- q + theme(plot.title = element_text(size = 30))
+q
+@
+    \end{subfigure}
+    \begin{subfigure}{.28\textwidth}
+<<echo=FALSE, eval=TRUE, prompt=FALSE, highlight=FALSE, fig.show='asis'>>=
+q <- plot(flog4p, subset.list="IL15", size.legend=NA, psize=2.5,  
+    color.bkg = NA)
+q <- q+ggtitle("4 parameter logistic function")  
+q <- q + theme(plot.title = element_text(size = 30))
+q
+@
+    \end{subfigure}
+    \begin{subfigure}{.28\textwidth}
+<<echo=FALSE, eval=TRUE, prompt=FALSE, highlight=FALSE, fig.show='asis'>>=
+q <- plot(fexp, subset.list="IL15", size.legend=NA, psize=2.5, 
+    color.bkg = NA)
+q <- q + ggtitle("Exponential growth") 
+q <- q + theme(plot.title = element_text(size = 30))
+q
+@
+    \end{subfigure}
+    \caption{Comparison of five-parameter, four-parameter and exponential 
+    models for plate 1 (IL15 analyte) with ignored background.}
+\label{fig:modelscomp}
+\end{center}
+\end{figure}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Background
+%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Blank controls}
+The {\tt scluminex} functions allows to specify 4 methods to handle 
+blank controls. As an example, first we subset information from one 
+analyte and the we add the expected concentration data:
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+fgf <- subset(mfidata, analyte=="FGF" & plate=="plate_1")
+dat <- data_selection(fgf, ecdata) 
+@
+
+\paragraph{Ignored:} the background 
+information can be ignored, so the estimation of the coefficients will 
+not take into account any background data.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE,warning=FALSE>>=
+ig <- scluminex("plate_1",dat$plate_1$standard, dat$plate_1$background, 
+                lfct="SSl4", bkg="ignore", fmfi="mfi", fanalyte="analyte", 
+                verbose=FALSE)
+@
+
+
+\paragraph{Included:} the estimation of the standard curve takes 
+into account the mean of the background of the values as another 
+point of the standard curve. The median fluorescence 
+intensity and the expected concentration for this new point by  
+analyte is estimated as follows:
+
+\begin{itemize*}
+    \item MFI: geometric mean value of the blank controls.
+    \item EC: the minimum expected concentration value of the standard points 
+divided by 2.
+\end{itemize*}
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+inc <- scluminex("plate_1",dat$plate_1$standard, dat$plate_1$background, 
+                lfct="SSl4", bkg="include", fmfi="mfi", fanalyte="analyte", 
+                verbose=FALSE)
+@
+
+
+\paragraph{Subtracted:} the geometric mean of the blank controls is subtracted 
+from all the standard points.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+sub <- scluminex("plate_1",dat$plate_1$standard, dat$plate_1$background, 
+                lfct="SSl4", bkg="subtract", fmfi="mfi", fanalyte="analyte", 
+                verbose=FALSE)
+@
+
+
+\paragraph{Constrained:} the constrained parameter 
+(lower asymptote) is fixed to the geometric mean background value and 
+$p-1$ parameters are estimated from the original model. 
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+cons <- scluminex("plate_1", dat$plate_1$standard, dat$plate_1$background, 
+    lfct="SSl4", bkg="constraint", fmfi="mfi", fanalyte="analyte", 
+    verbose=FALSE)
+@
+
+
+
+\noindent Figure \ref{fig:backcomp} shows the comparison of the 4 methods.
+
+
+<<echo=FALSE, eval=FALSE>>=
+r <- plot(ig, size.legend=NA) + ggtitle("Ignored")
+s <- plot(inc, size.legend=NA) + ggtitle("Included")
+u <- plot(sub, size.legend=NA) + ggtitle("Subtracted")
+v <- plot(cons, size.legend=NA) + ggtitle("Constrained")
+multiplot(r,s,u,v, cols=2)
+@
+
+\begin{figure}[!ht]
+\begin{center}
+\includegraphics[scale=0.6]{./comparisonbackground.pdf}
+\caption{Comparison of background methods for plate 1 (FGF analyte) 
+and 4 parameters logistic model. Green line shows the geometric mean of the
+blank controls.}
+\label{fig:backcomp}
+\end{center}
+\end{figure}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Limits of Quantification
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\clearpage
+\newpage
+
+\subsection{Limits of quantification}
+The package implements 3 types of estimation for the upper and lower 
+limit of quantification.
+
+\paragraph{Derivatives:} the estimation is based on the second order 
+derivative of the model \cite{loqder}. Once is estimated the maximum and 
+minimum values are found (finding the roots on the third derivative) and 
+those are the limits of quantification (Figure \ref{fig:loqder}). The package 
+calculates the exact derivatives functions for the {\tt SSl5}, 
+{\tt SSl4} and {\tt SSexp}. Given an {\tt scluminex} object the 
+{\tt loq\_derivatives} function estimates the LOQ for all analytes 
+or the specified ones by the {\tt subset.list} argument.
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+# arguments of the function
+args(loq_derivatives)
+@
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+der <- loq_derivatives(allanalytes, subset.list="FGF")
+der
+@
+
+
+\begin{figure}[!ht]
+\begin{center}
+\includegraphics[scale=0.5]{./loqder.pdf}
+\caption{Representation of the limits of quantification based on derivatives.}
+\label{fig:loqder}
+\end{center}
+\end{figure}
+
+
+
+\clearpage
+\paragraph{Interval:} the {\tt loq\_interval} function estimates the 
+LOQ based on the prediction interval of the curve and the coefficients 
+of the model \cite{loqint}:
+
+\begin{itemize*}
+\item Lower limit of quantification: is the concentration 
+value of the intersection between lower prediction interval of the 
+standard curve and the upper interval for the lower asymptote coefficient 
+estimated by the model (if the model allows).
+\item Upper limit of quantification: is the concentration 
+value of the intersection between upper prediction interval of the standard 
+curve and the lower interval for the upper asymptote coefficient 
+estimated by the model (if the model allows).
+\end{itemize*}
+
+\noindent The function needs as an argument, the model and the position 
+or name of the asymptote coefficients. In Figure \ref{fig:loqint} there is an 
+example for the plate 1, FGF analyte with ignored background.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+int <- loq_interval(allanalytes, subset.list= "FGF", low.asymp=2, high.asymp=3)
+int
+@
+
+
+<<loqint, echo=FALSE, warning=FALSE, fig.show='asis', fig.height=4, fig.width=4.5, dev='pdf', fig.align='center' ,fig.cap='Estimation of limits of quantification based on interval method for plate 1, FGF analyte and ignored background'>>=
+par(mar=c(5,4,2,2), cex=0.8)
+with(int[[1]]$data, plot(log10_concentration, log10_mfi,
+    type="p", main="", axes=TRUE , ylab="MFI", 
+    xlab="Concentration", ylim=c(1,3.9), xlim=c(-2,4.8)))
+conf <- conf_bands(allanalytes, "FGF", 
+    xvalue=seq(min(int[[1]]$data$log10_concentration),
+    max(int[[1]]$data$log10_concentration),0.1), interval="prediction")
+with(conf,lines(xvalue, log10_mfi))
+with(conf,lines(xvalue, log10_mfi.lci, lty=2))
+with(conf,lines(xvalue, log10_mfi.uci, lty=2))
+
+model <- allanalytes$FGF$model
+ss <- summary(model)
+qvalue <- 1-(0.05/2)
+tvalue <- qt(qvalue, df = ss$df[2])
+
+coflow <- summary(model)$coef[2,c(1,2,3)]
+abline(h=coflow[1], lty=1, col="red")
+abline(h=int[[1]]$ul, lty=2, col="red")
+abline(v=int[[1]]$lloq, lty=2, col="blue")
+
+cex.lev <- 1
+text(2.5, coflow[1] , pos=1, "Lower asymptote coefficient", cex=cex.lev-0.2)
+text(3, int[[1]]$ul, pos=3,  "Lower asymptote coefficient upper limit", 
+    cex=cex.lev-0.2)
+text(int[[1]]$lloq, 2.5, pos=2, "Lower LOQ", cex=cex.lev-0.2)
+
+# text(2, 3,pos=2, "Prediction interval", cex=cex.lev)
+
+coflow <- summary(model)$coef[3,1]
+abline(h=coflow[1], lty=1, col="red")
+abline(h=int$FGF$ll, lty=2, col="red")
+abline(v=int$FGF$uloq, lty=2, col="blue")
+
+text(0, coflow[1], pos=3, "Upper asymptote coefficient", cex=cex.lev-0.2)
+text(0, int$FGF$ll, pos=1, "Upper asymptote coefficient lower limit", 
+    cex=cex.lev-0.2)
+text(int$FGF$uloq,2.5, pos=4, "Higher LOQ", cex=cex.lev-0.2)
+@
+
+
+
+\noindent In the scenario where one of the asymptotes must be specified 
+and not based in the coefficients, the arguments {\tt lowci} or {\tt highci} 
+must be changed into the desired value. For example, in Figure 
+\ref{fig:loqint2} the upper LOQ is estimated based on coefficients 
+(same values as estimated in Figure \ref{fig:loqint}) but the lower 
+asymptote has been fixed to 1.5 (not based on the 
+coefficients estimation). Therefore, the intersection of the lower asymptote 
+with the prediction interval is different and consequently the 
+estimation of the concentration:
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+int2 <- loq_interval(allanalytes, subset.list="FGF", high.asymp=3, lowci=1.5)
+int2
+@
+
+
+<<loqint2, echo=FALSE, warning=FALSE, fig.show='hide', fig.cap='Estimation of limits of quantification based on interval method (fixed lower assymptote value) for plate 1, FGF analyte and ignored background.',fig.show='asis', fig.height=4, fig.width=4.5, dev='pdf', fig.align='center' >>=
+par(mar=c(5,4,2,2), cex=0.8)
+with(int[[1]]$data, plot(log10_concentration, log10_mfi,
+    type="p", main="", axes=TRUE , ylab="MFI", 
+    xlab="Concentration",ylim=c(1,3.9), xlim=c(-1.8,4.4)))
+conf <- conf_bands(ig,"FGF", 
+    xvalue=seq(min(int[[1]]$data$log10_concentration),
+    max(int[[1]]$data$log10_concentration),0.1), 
+    interval="prediction")
+with(conf,lines(xvalue, log10_mfi))
+with(conf,lines(xvalue, log10_mfi.lci, lty=2))
+with(conf,lines(xvalue, log10_mfi.uci, lty=2))
+
+model <- allanalytes$FGF$model
+ss <- summary(model)
+qvalue <- 1-(0.05/2)
+tvalue <- qt(qvalue, df = ss$df[2])
+
+coflow <- summary(model)$coef[2,c(1,2,3)]
+
+abline(h=int2[[1]]$ul, lty=2, col="red")
+abline(v=int2[[1]]$lloq, lty=2, col="blue")
+
+cex.lev <- 0.8
+text(int2[[1]]$lloq, 2, pos=2, "Lower LOQ", cex=cex.lev)
+text(2, int2[[1]]$ul, pos=1, "Fixed asymptote", cex=cex.lev)
+
+# text(2, 3,pos=2, "Prediction interval", cex=cex.lev)
+
+coflow <- summary(model)$coef[3,1]
+abline(h=coflow[1], lty=1, col="red")
+abline(h=int2$FGF$ll, lty=2, col="red")
+abline(v=int2$FGF$uloq, lty=2, col="blue")
+
+text(0, coflow[1], pos=3, "Upper asymptote coefficient", cex=cex.lev)
+text(0.3, int$FGF$ll, pos=1, "Upper asymptote coefficient lower limit", cex=cex.lev)
+text(int$FGF$uloq,2, pos=4, "Higher LOQ", cex=cex.lev)
+@
+
+
+
+\paragraph{Coefficient of variation:} this method is based on the estimation of 
+the coefficient of variation of the fitted concentration values 
+(base 10 logarithm) \cite{Defawe,Gottschalk}. The function calls the {\tt invest} 
+function and estimates the fitted concentration given a MFI, the standard error 
+is estimated using the Delta Method. The Coefficient of Variation for the 
+fitted concentration is estimated as:
+
+\begin{align*}
+\sqrt{e^{ (SE \times  ln(10))^2} - 1 }
+\end{align*}
+
+\noindent where $SE$ is the standard error of the fitted 
+concentration \cite{logcv}. \\
+
+\noindent For a specific coefficient of variation cutoff the LLOQ and HLOQ are calculated as the fitted concentration values whose coefficient of variation is lower or equal to the specified cutoff. \\
+
+\noindent Given a {\tt scluminex} object and a coefficient of variation cutoff 
+({\tt max.cv} argument), the {\tt loq\_cv} function estimates the LOQ. See
+Figure \ref{fig:loqcv} for a representation of it.
+
+
+<<echo=TRUE,eval=TRUE,prompt=TRUE,comment=NA,highlight=FALSE>>=
+cv <- loq_cv(allanalytes, subset.list="FGF", max.cv=0.2)
+cv
+@
+
+
+
+
+<<loqcv, eval=TRUE, echo=FALSE, highlight=FALSE,fig.show='asis', fig.cap='Estimation of limits of quantification based on coefficient of variation method.', fig.height=3, fig.width=3.5, dev='pdf', fig.align='center'>>=
+par(mar=c(2.1, 2.1, 0.1, 2.1), cex=0.7)
+cv <- loq_cv(allanalytes, subset.list="FGF", max.cv=0.2,n.cuts=1000)
+xax <- c(min(cv[[1]]$data$log10_concentration),
+    max(cv[[1]]$data$log10_concentration))
+yax <- c(min(cv[[1]]$data$log10_mfi),
+    max(cv[[1]]$data$log10_mfi))
+
+conf <- conf_bands(allanalytes,"FGF", 
+    xvalue=seq(xax[1], xax[2], 0.1), interval="prediction")
+
+with(conf, plot(xvalue, log10_mfi, type="l", 
+    axes=F,xlim=c(xax[1],xax[2]),xlab="",ylab=""))
+
+mtext("Concentration",1, cex=1, line=1)
+mtext("Median Fluorescence Intensity",2, cex=1, line=1)
+
+with(cv[[1]]$data, lines(log10_concentration, log10_mfi, type="p"))
+abline(v=c(cv[[1]]$lloq, cv[[1]]$uloq),lty=2)
+
+par(new=TRUE)
+with(cv[[1]]$cv, plot(log10_concentration.fit, cv, 
+    type="l", axes=F, xlab="",ylab="", 
+    xlim=c(xax[1],xax[2]),col="red", ylim=c(0,1)))
+
+mtext("Coefficient of Variation", side=4, cex=1, line=1)
+box()
+abline(v=c(cv[[1]]$lloq, cv[[1]]$uloq), lty=2, col="blue")
+abline(h=0.2,lty=2)
+legend('topleft', lty=c(1,2,2), col=c("red","black"), 
+    legend=c("CV value","CV specified cutoff"), cex=1.3, bg="white")
+
+text(0, 0.65, pos=4, "Lower LOQ", cex=1.15)
+text(2.3, 0.65, pos=4, "Higher LOQ", cex=1.15)
+
+@
+
+
+\noindent The LOQ object is {\tt loq} class:
+
+<<eval=TRUE, echo=TRUE, highlight=FALSE, comment=NA, prompt=TRUE>>=
+class(der)
+@
+
+\noindent the {\tt summary} method can be applied to obtain more information.
+
+<<eval=TRUE, echo=TRUE, highlight=FALSE, comment=NA, prompt=TRUE>>=
+summary(der)
+@
+
+\noindent The new variables added are:
+\begin{itemize*}
+    \item {\tt ly}: the MFI value of the LLOQ ({\tt lloq} variable).
+    \item {\tt uy}: the MFI value of the ULOQ ({\tt uloq} variable).
+    \item {\tt loq.drange}: dynamic range of the LOQ (difference between {\tt uloq}
+    and {\tt lloq}).
+    \item {\tt y.drange}: dynamic range of the MFI values (difference between {\tt uy}
+    and {\tt ly}).
+\end{itemize*}
+
+\subsection{Fitted concentration}
+Given a MFI value (base 10 logarithm), the function {\tt invest} 
+estimates the concentration value and the standard error 
+calculating the invert value \cite{INLR}. The package calculates 
+the inverse functions for the 5-parameters, 4-parameters and exponential 
+functions (in base 10 logarithm) therefore an analytically solution 
+is given. The arguments of the function are:
+
+<<eval=TRUE, echo=TRUE, highlight=FALSE, comment=NA, prompt=TRUE>>=
+args(invest)
+@
+
+
+\noindent Two methods for estimating the confidence interval are available:
+
+\paragraph{Bootstrap:} generates {\tt nboot} response vectors 
+(assuming normality) and fit the same inital model with the original 
+concentration data. The confidence interval is calculated by the 
+percentile method specified in the {\tt level} argument. No standard error 
+is estimated.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+invesboot <- invest(ig, "FGF", yvalue = 1.4, ci.method="bootstrap")
+invesboot
+@
+
+
+\paragraph{Delta method:} estimates the standard error based on 
+the Delta Method. The function used is {\tt deltamethod}  from the 
+{\tt msm} \cite{msm} package.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+invesdelta <- invest(ig, "FGF", yvalue = 1.4, ci.method="delta")
+invesdelta
+@
+
+
+
+\noindent Also is possible to take into account the dilution of 
+the concentration calling the {\tt est\_conc} function. 
+This function is a wrapper of the {\tt invest} one but is specific for 
+concentration estimation. Given a {\tt scluminex} object and a dataset, 
+the function estimates the concentration for each analyte with the 
+corresponding estimated model. \\
+
+
+\noindent As an example, to select the positive control dataset of the FGF analyte:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+concdf <- subset(datasets$plate_1$positive, analyte=="FGF")
+@
+
+\noindent Assuming dilution factor 1 (same results as {\tt invest} function):
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+est_conc(ig, concdf, fmfi="mfi", dilution=1)
+@
+
+\noindent Assuming dilution factor 2:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+est_conc(ig, concdf, fmfi="mfi", dilution=2)
+@
+
+
+
+\subsection{Agreement between controls}
+
+The function {\tt intra\_icc} estimates the intraclass 
+correlation coefficient for a dataset in long format. The function calls the
+{\tt icc} function from the {\tt irr} \cite{irr} package.\\
+
+\noindent Taking as example the concentration data for the positive controls:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+conc_icc_df <- est_conc(allanalytes, datasets$plate_1$positive, 
+    fmfi="mfi", dilution=1)
+@
+
+\noindent The data has the following structure (6 first rows):
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(conc_icc_df)
+@
+
+\noindent To estimate the ICC:
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+icc_positive <- intra_icc(conc_icc_df, id.var=c("sample", "analyte", "plate"), 
+    value.var="dil.fitted.conc", type="agreement",model="twoway", 
+    unit="single")
+@
+
+\noindent where
+
+\begin{itemize*}
+    \item {\tt id.var}: indetifies the replicates samples
+    \item {\tt value.var}: the variable to be analyzed.
+    \item others: arguments to be passed to the {\tt icc} function from the
+{\tt irr} package
+\end{itemize*}
+
+
+\noindent There are three objects in the list generated:\\
+
+\noindent \textbf{Re-Structured dataset}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(icc_positive$icc.df)
+@
+
+\noindent \textbf{The ICC object from the {\tt irr} package} 
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+names(icc_positive$icc.mod)
+@
+
+\noindent \textbf{The ICC estimation}
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+icc_positive$icc.value
+@
+
+\section{Summary of results}
+
+The {\tt scluminex} object can be printed, summarized and plotted.
+
+
+\paragraph{Print:} the name of the analytes is listed.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+allanalytes
+@
+
+\paragraph{Summary:} a dataset is generated showing the estimated coefficients, 
+number of observations, $R^2$, convergence and the fitted function for each
+analyte. To extract more information {\tt as.data.frame} can be applied to a
+{\tt summary.scluminex} object or to a {\tt scluminex}. The methodology applied:
+
+
+\subparagraph{Neill test:} is an ANOVA-based lack-of-fit test \cite{NEILLTEST}.
+The method does not require replicates for concentration values but assumes 
+that predictor variable can be grouped. The function is an adaptation 
+of the {\tt neill.test} from {\tt drc} package \cite{DRC}. The p-value 
+of the test is reported.
+
+\subparagraph{$ \boldsymbol{R^2}$:} is the adjusted version of $R^2$ which 
+takes into account the number of fitted parameters, estimated as:
+
+\begin{align*}
+\left( 1 - \frac{\frac{SS_{err}}{(n-p-1)}}{\frac{SS_{tot}}{(n-1)}} \right)
+\end{align*}
+
+where,
+\begin{itemize*}
+    \item $n$: number of observations
+    \item $p$: number of estimated coefficients 
+    \item $SS_{err}$: residual sum of squares
+    \item $SS_{tot}$: total sum of squares 
+\end{itemize*}
+
+\subparagraph{AIC:} Akaike information criterion estimated as:
+
+\begin{align*}
+\left(  -2 \times (log-likelihood) + 2 \times p \right)
+\end{align*}
+
+\noindent where $p$ is the number of estimated parameters in the model. The 
+function applied to the fitted model is the generic {\tt AIC} function for 
+{\tt nls} class object. \\
+
+% note that for {\tt nls} models the number of estimated parameters
+% $p$ is (number of coefficients + 1)
+% so AIC(nls_model) = -2*logLik(model) + (2*(length(coef(model))+1))
+
+\noindent As example, the {\tt summary} method applied to a {\tt scluminex}
+object
+
+<<echo=FALSE, prompt=TRUE, comment=NA, highlight=FALSE, warning=FALSE>>=
+options(width=120)
+@
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, size="small">>=
+summary(allanalytes)
+@
+
+<<echo=FALSE, prompt=TRUE, comment=NA, highlight=FALSE, warning=FALSE>>=
+options(width=80)
+@
+
+
+\noindent the {\tt as.data.frame} method to a {\tt scluminex} object
+<<echo=TRUE, prompt=TRUE, highlight=FALSE, comment=NA, size="small">>=
+as.data.frame(ig)
+@
+
+
+
+\noindent and {\tt as.data.frame} to a {\tt summary.scluminex} method:
+<<echo=TRUE, prompt=TRUE, highlight=FALSE, comment=NA>>=
+ss <- summary(ig)
+as.data.frame(ss)
+@
+
+\newpage
+\paragraph{Plot:} standard curves, standardized residuals or 
+Q-Q plot of the residuals are plotted. The function is based on 
+{\tt ggplot2} so other data can be added to the plot. The plot 
+is specified by the {\tt type} argument.\\
+
+\noindent The default type is {\tt scurve} and the function 
+allows to plot the standard curve of a plate for all analytes 
+or just the ones desired. Also allows to plot some other aspects 
+as legend, confidence bands, background or specify the number of columns. 
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center',fig.width=10, fig.height= 10>>=
+plot(allanalytes, type = "scurve", ncol=5, psize=1)
+@
+
+\newpage
+\noindent The type {\tt residuals} show the standardized residuals. 
+The points beyond the {\tt out.limit} argument are presented in red and 
+the well variable is shown.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center',  fig.width= 10, fig.height= 10>>=
+plot(allanalytes, type = "residuals", out.limit= 2.5, ncol=5, psize=1)
+@
+
+\newpage
+\noindent The type {\tt qqplot} generates the Q-Q plot of the 
+standardized residuals.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center', fig.width= 10, fig.height= 10>>=
+plot(allanalytes,  type = "qqplot", ncol=5, psize=1)
+@
+
+\section{Flag data}
+
+\noindent The package implements several features to easily identify outliers.
+The function {\tt get\_outliers} allows to identify the points of the standard
+curve with a standardized residual greater than a specified value.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center'>>=
+get_outliers(allanalytes, out.limit=2)
+@
+
+\noindent As commented previously the plot of the residuals also allows to 
+identify the same points
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center', fig.width= 10, fig.height= 10>>=
+plot(allanalytes, "residuals", out.limit=2, size.text=2.5)
+@
+
+\noindent Once we have identified the outliers we can add this information
+to the data, using {\tt data\_selection} or the {\tt merge} function. 
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center'>>=
+out <- get_outliers(allanalytes, out.limit=2)
+flag.dat <- merge(datasets$plate_1$standard, out, by=c("analyte","well"),all.x=TRUE)
+@
+
+\noindent After we can run the {\tt scluminex} function.
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center'>>=
+flag.allanalytes <- scluminex(plateid = "newplate.flag", 
+    standard = flag.dat, 
+    background = datasets$plate_1$background,
+    bkg = "ignore", lfct = c("SSl5","SSl4"), 
+    fmfi = "mfi", verbose = FALSE)
+@
+
+\noindent And plot the standard curve. The flagged points are shown as 
+non-filled points but they are not included in the estimation of the curve.
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE, fig.align='center', fig.width= 10, fig.height=6>>=
+plot(flag.allanalytes, "scurve", 
+     subset.list=c("FGF","IL1B", "IL13","EOTAXIN","VEGF","MIG","IL4","IL8"),
+     ncol=4, psize=2, size.legend=3)
+@
+
+
+
+
+\section{Raw data from xPONENT$^\circledR$ software}
+\label{sec:xponent}
+The package allows to import CSV raw data that has been exported from 
+xPONENT$^\circledR$ software. The {\tt lum\_import} function identifies sections of 
+information from this data. Moreover the function imports Bead raw 
+data. 
+
+\subsection{MFI raw data}
+\noindent There is an example of MFI raw data included in the package. The CSV 
+file has several blocks of information that need to be extracted and 
+restructured in order to analyze it. This raw data can be imported calling 
+the {\tt lum\_import} function:
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+imp_path <-  system.file(c("inst","extdata"),"plate1.csv", package="drLumi")
+imp <- lum_import(imp_path)
+imp
+@
+
+\noindent The function identifies the section parts of the CSV file and groups 
+the data in several datasets. The {\tt lum\_import} object has the 
+following objects:
+
+\begin{itemize*}
+    \item {\tt dtblock}: blocks of information from original CSV file.
+    \item {\tt raw\_metadata}: a {\tt data.frame} with the information 
+    of batch (software version, operator, batch date  \ldots). 
+    \item {\tt vars} type object: variables that are going to be 
+    exported in the {\tt lum\_export} function. These variables can 
+    be modified in order to remove or add more. 
+    \item {\tt name\_batch}: the name of the batch as it is described 
+    in raw data.
+    \item {\tt type\_raw\_data}: Fluorescence (MFI values for samples) 
+    or Bead (for Bead data).
+\end{itemize*}
+
+\noindent After the identification of the raw data is necessary to 
+extract the information from the {\tt lum\_import} object. This 
+can be done using the {\tt lum\_export} function which generates several 
+datasets based on the identified sections and the specified variables:
+
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+expdb <- lum_export(imp)
+expdb
+@
+
+\noindent As described previously variables can be removed  
+(or new ones can be added). Following is an example for the selection of 2 
+variables from the well dataset:
+
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+imp$well_vars
+imp$well_vars <- c("Median", "Net MFI")
+exp <- lum_export(imp)
+head(exp$well)
+@
+
+
+\subsection{Bead raw data}
+Bead raw data has several files (usually one file per well). This type of data
+can be imported either from a folder or from a zip file. The 
+function assumes that all well files within the folder are in CSV format and 
+try to combine all information. To identify the files new variables are added:
+
+\begin{itemize*}
+\item well: with the name of the CSV file
+\item batch: the name of the file
+\item batch\_well\_eventno: a combination of well, batch and eventno variables.
+\end{itemize*}
+
+\noindent Reading non-zip compressed data:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+imp_path_nozip <- system.file(c("inst","extdata"),"bead_data", 
+                              package="drLumi")
+bead_nozip <- lum_import(imp_path_nozip)
+bead_nozip
+@
+
+\noindent The code for reading zip files is the same as reading
+non-compressed files and returns the same information. The only difference is
+that first unzip the file and creates a new folder with the same name as the original
+in the same directory where the zip file is located.
+
+\noindent All CSV files are combined in one {\tt data.frame}:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+head(bead_nozip$bead_files)
+@
+
+\noindent And the files are identifiable by the well variable:
+<<echo=TRUE, prompt=TRUE, comment=NA, highlight=FALSE>>=
+with(bead_nozip$bead_files, table(well, batch))
+@
+
+
+\newpage
+%\bibliographystyle{bmc_article}  % Style BST file
+\bibliographystyle{acm}  % Style BST file
+\bibliography{drLumi_vignette}
+
+
+\end{document}
+
+
